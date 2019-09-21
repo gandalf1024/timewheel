@@ -10,6 +10,12 @@ func GetTime() int64 {
 	return time.Now().Unix()
 }
 
+func GetTimeAfterScend(s int) int64 {
+	now := time.Now()
+	now = now.Add(time.Second * time.Duration(s))
+	return time.Now().Unix()
+}
+
 // GetMicrotime 获取微秒时间
 func GetMicrotime() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())

@@ -1,0 +1,8 @@
+[W]
+    Mode = 0
+    WheelExecTime = 1569053474
+    Tasks = [
+        {Num=1,Url="https://www.hanslaser.com/",Params = {name = "Nail",mmm = "xcvzcxv"},Mode=1},
+        {Num=2,Url="https://www.hanslaser.com/",Params = {name = "22222",mmm = "22222"},Mode=1},
+        {Num=3,Url="https://www.hanslaser.com/",Params = {name = "33333",mmm = "33333"},Mode=1}
+    ]

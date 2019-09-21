@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -47,4 +48,13 @@ func TestTimeAgo(t *testing.T) {
 			}
 		})
 	}
+}
+func Test_GetTimestamp(t *testing.T) {
+	cc := GetTimestamp()
+	fmt.Println(cc)
+}
+
+func Test_GetTimeAfterScend(t *testing.T) {
+	vv := GetTimeAfterScend(30)
+	fmt.Println(vv)
 }
