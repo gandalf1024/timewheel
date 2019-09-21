@@ -1,168 +1,282 @@
+// Package errors provides simple error handling primitives.
+//
+// The traditional error handling idiom in Go is roughly akin to
+//
+//     if err != nil {
+//             return err
+//     }
+//
+// which when applied recursively up the call stack results in error reports
+// without context or debugging information. The errors package allows
+// programmers to add context to the failure path in their code in a way
+// that does not destroy the original value of the error.
+//
+// Adding context to an error
+//
+// The errors.Wrap function returns a new error that adds context to the
+// original error by recording a stack trace at the point Wrap is called,
+// together with the supplied message. For example
+//
+//     _, err := ioutil.ReadAll(r)
+//     if err != nil {
+//             return errors.Wrap(err, "read failed")
+//     }
+//
+// If additional control is required, the errors.WithStack and
+// errors.WithMessage functions destructure errors.Wrap into its component
+// operations: annotating an error with a stack trace and with a message,
+// respectively.
+//
+// Retrieving the cause of an error
+//
+// Using errors.Wrap constructs a stack of errors, adding context to the
+// preceding error. Depending on the nature of the error it may be necessary
+// to reverse the operation of errors.Wrap to retrieve the original error
+// for inspection. Any error value which implements this interface
+//
+//     type causer interface {
+//             Cause() error
+//     }
+//
+// can be inspected by errors.Cause. errors.Cause will recursively retrieve
+// the topmost error that does not implement causer, which is assumed to be
+// the original cause. For example:
+//
+//     switch err := errors.Cause(err).(type) {
+//     case *MyError:
+//             // handle specifically
+//     default:
+//             // unknown error
+//     }
+//
+// Although the causer interface is not exported by this package, it is
+// considered a part of its stable public interface.
+//
+// Formatted printing of errors
+//
+// All error values returned from this package implement fmt.Formatter and can
+// be formatted by the fmt package. The following verbs are supported:
+//
+//     %s    print the error. If the error has a Cause it will be
+//           printed recursively.
+//     %v    see %s
+//     %+v   extended format. Each Frame of the error's StackTrace will
+//           be printed in detail.
+//
+// Retrieving the stack trace of an error or wrapper
+//
+// New, Errorf, Wrap, and Wrapf record a stack trace at the point they are
+// invoked. This information can be retrieved with the following interface:
+//
+//     type stackTracer interface {
+//             StackTrace() errors.StackTrace
+//     }
+//
+// The returned errors.StackTrace type is defined as
+//
+//     type StackTrace []Frame
+//
+// The Frame type represents a call site in the stack trace. Frame supports
+// the fmt.Formatter interface that can be used for printing information about
+// the stack trace of this error. For example:
+//
+//     if err, ok := err.(stackTracer); ok {
+//             for _, f := range err.StackTrace() {
+//                     fmt.Printf("%+s:%d\n", f, f)
+//             }
+//     }
+//
+// Although the stackTracer interface is not exported by this package, it is
+// considered a part of its stable public interface.
+//
+// See the documentation for Frame.Format for more details.
 package errors
 
 import (
 	"fmt"
-	"runtime"
-	"strings"
-
-	"github.com/iris-contrib/go.uuid"
+	"io"
 )
 
-var (
-	// Prefix the error prefix, applies to each error's message.
-	Prefix = ""
-)
-
-// Error holds the error message, this message never really changes
-type Error struct {
-	// ID returns the unique id of the error, it's needed
-	// when we want to check if a specific error returned
-	// but the `Error() string` value is not the same because the error may be dynamic
-	// by a `Format` call.
-	ID string `json:"id"`
-	// The message of the error.
-	Message string `json:"message"`
-	// Apennded is true whenever it's a child error.
-	Appended bool `json:"appended"`
-	// Stack returns the list of the errors that are shown at `Error() string`.
-	Stack []Error `json:"stack"` // filled on AppendX.
-}
-
-// New creates and returns an Error with a pre-defined user output message
-// all methods below that doesn't accept a pointer receiver because actually they are not changing the original message
-func New(errMsg string) Error {
-	uidv4, _ := uuid.NewV4() // skip error.
-	return Error{
-		ID:      uidv4.String(),
-		Message: Prefix + errMsg,
+// New returns an error with the supplied message.
+// New also records the stack trace at the point it was called.
+func New(message string) error {
+	return &fundamental{
+		msg:   message,
+		stack: callers(),
 	}
 }
 
-// NewFromErr same as `New` but pointer for nil checks without the need of the `Return()` function.
-func NewFromErr(err error) *Error {
+// Errorf formats according to a format specifier and returns the string
+// as a value that satisfies error.
+// Errorf also records the stack trace at the point it was called.
+func Errorf(format string, args ...interface{}) error {
+	return &fundamental{
+		msg:   fmt.Sprintf(format, args...),
+		stack: callers(),
+	}
+}
+
+// fundamental is an error that has a message and a stack, but no caller.
+type fundamental struct {
+	msg string
+	*stack
+}
+
+func (f *fundamental) Error() string { return f.msg }
+
+func (f *fundamental) Format(s fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			io.WriteString(s, f.msg)
+			f.stack.Format(s, verb)
+			return
+		}
+		fallthrough
+	case 's':
+		io.WriteString(s, f.msg)
+	case 'q':
+		fmt.Fprintf(s, "%q", f.msg)
+	}
+}
+
+// WithStack annotates err with a stack trace at the point WithStack was called.
+// If err is nil, WithStack returns nil.
+func WithStack(err error) error {
 	if err == nil {
 		return nil
 	}
-
-	errp := New(err.Error())
-	return &errp
-}
-
-// Equal returns true if "e" and "to" are matched, by their IDs if it's a core/errors type otherwise it tries to match their error messages.
-// It will always returns true if the "to" is a children of "e"
-// or the error messages are exactly the same, otherwise false.
-func (e Error) Equal(to error) bool {
-	if e2, ok := to.(Error); ok {
-		return e.ID == e2.ID
-	} else if e2, ok := to.(*Error); ok {
-		return e.ID == e2.ID
+	return &withStack{
+		err,
+		callers(),
 	}
-
-	return e.Error() == to.Error()
 }
 
-// Empty returns true if the "e" Error has no message on its stack.
-func (e Error) Empty() bool {
-	return e.Message == ""
+type withStack struct {
+	error
+	*stack
 }
 
-// NotEmpty returns true if the "e" Error has got a non-empty message on its stack.
-func (e Error) NotEmpty() bool {
-	return !e.Empty()
-}
+func (w *withStack) Cause() error { return w.error }
 
-// String returns the error message
-func (e Error) String() string {
-	return e.Message
-}
-
-// Error returns the message of the actual error
-// implements the error
-func (e Error) Error() string {
-	return e.String()
-}
-
-// Format returns a formatted new error based on the arguments
-// it does NOT change the original error's message
-func (e Error) Format(a ...interface{}) Error {
-	e.Message = fmt.Sprintf(e.Message, a...)
-	return e
-}
-
-func omitNewLine(message string) string {
-	if strings.HasSuffix(message, "\n") {
-		return message[0 : len(message)-2]
-	} else if strings.HasSuffix(message, "\\n") {
-		return message[0 : len(message)-3]
+func (w *withStack) Format(s fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			fmt.Fprintf(s, "%+v", w.Cause())
+			w.stack.Format(s, verb)
+			return
+		}
+		fallthrough
+	case 's':
+		io.WriteString(s, w.Error())
+	case 'q':
+		fmt.Fprintf(s, "%q", w.Error())
 	}
-	return message
 }
 
-// AppendInline appends an error to the stack.
-// It doesn't try to append a new line if needed.
-func (e Error) AppendInline(format string, a ...interface{}) Error {
-	msg := fmt.Sprintf(format, a...)
-	e.Message += msg
-	e.Appended = true
-	e.Stack = append(e.Stack, New(omitNewLine(msg)))
-	return e
-}
-
-// Append adds a message to the predefined error message and returns a new error
-// it does NOT change the original error's message
-func (e Error) Append(format string, a ...interface{}) Error {
-	// if new line is false then append this error but first
-	// we need to add a new line to the first, if it was true then it has the newline already.
-	if e.Message != "" {
-		e.Message += "\n"
-	}
-
-	return e.AppendInline(format, a...)
-}
-
-// AppendErr adds an error's message to the predefined error message and returns a new error.
-// it does NOT change the original error's message
-func (e Error) AppendErr(err error) Error {
-	return e.Append(err.Error())
-}
-
-// HasStack returns true if the Error instance is created using Append/AppendInline/AppendErr funcs.
-func (e Error) HasStack() bool {
-	return len(e.Stack) > 0
-}
-
-// With does the same thing as Format but it receives an error type which if it's nil it returns a nil error.
-func (e Error) With(err error) error {
+// Wrap returns an error annotating err with a stack trace
+// at the point Wrap is called, and the supplied message.
+// If err is nil, Wrap returns nil.
+func Wrap(err error, message string) error {
 	if err == nil {
 		return nil
 	}
-
-	return e.Format(err.Error())
+	err = &withMessage{
+		cause: err,
+		msg:   message,
+	}
+	return &withStack{
+		err,
+		callers(),
+	}
 }
 
-// Ignore will ignore the "err" and return nil.
-func (e Error) Ignore(err error) error {
+// Wrapf returns an error annotating err with a stack trace
+// at the point Wrapf is called, and the format specifier.
+// If err is nil, Wrapf returns nil.
+func Wrapf(err error, format string, args ...interface{}) error {
 	if err == nil {
-		return e
-	}
-	if e.Error() == err.Error() {
 		return nil
 	}
-	return e
+	err = &withMessage{
+		cause: err,
+		msg:   fmt.Sprintf(format, args...),
+	}
+	return &withStack{
+		err,
+		callers(),
+	}
 }
 
-// Panic output the message and after panics.
-func (e Error) Panic() {
-	_, fn, line, _ := runtime.Caller(1)
-	errMsg := e.Message
-	errMsg += "\nCaller was: " + fmt.Sprintf("%s:%d", fn, line)
-	panic(errMsg)
+// WithMessage annotates err with a new message.
+// If err is nil, WithMessage returns nil.
+func WithMessage(err error, message string) error {
+	if err == nil {
+		return nil
+	}
+	return &withMessage{
+		cause: err,
+		msg:   message,
+	}
 }
 
-// Panicf output the formatted message and after panics.
-func (e Error) Panicf(args ...interface{}) {
-	_, fn, line, _ := runtime.Caller(1)
-	errMsg := e.Format(args...).Error()
-	errMsg += "\nCaller was: " + fmt.Sprintf("%s:%d", fn, line)
-	panic(errMsg)
+// WithMessagef annotates err with the format specifier.
+// If err is nil, WithMessagef returns nil.
+func WithMessagef(err error, format string, args ...interface{}) error {
+	if err == nil {
+		return nil
+	}
+	return &withMessage{
+		cause: err,
+		msg:   fmt.Sprintf(format, args...),
+	}
+}
+
+type withMessage struct {
+	cause error
+	msg   string
+}
+
+func (w *withMessage) Error() string { return w.msg + ": " + w.cause.Error() }
+func (w *withMessage) Cause() error  { return w.cause }
+
+func (w *withMessage) Format(s fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			fmt.Fprintf(s, "%+v\n", w.Cause())
+			io.WriteString(s, w.msg)
+			return
+		}
+		fallthrough
+	case 's', 'q':
+		io.WriteString(s, w.Error())
+	}
+}
+
+// Cause returns the underlying cause of the error, if possible.
+// An error value has a cause if it implements the following
+// interface:
+//
+//     type causer interface {
+//            Cause() error
+//     }
+//
+// If the error does not implement Cause, the original error will
+// be returned. If the error is nil, nil will be returned without further
+// investigation.
+func Cause(err error) error {
+	type causer interface {
+		Cause() error
+	}
+
+	for err != nil {
+		cause, ok := err.(causer)
+		if !ok {
+			break
+		}
+		err = cause.Cause()
+	}
+	return err
 }

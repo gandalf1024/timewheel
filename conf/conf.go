@@ -5,7 +5,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"io/ioutil"
 	"path/filepath"
-	"timewheel/golog"
+	"timewheel/glog"
 )
 
 var Config GlobalConf
@@ -20,7 +20,7 @@ func init() {
 	path := fmt.Sprintf("./conf/%s.tml", env)
 	Config = GlobalConf{}
 	Config = TOMLobj(path, Config)
-	golog.Infof("项目配置初始化成功:=(%v)", Config)
+	glog.Infof("项目配置初始化成功:=(%v)", Config)
 }
 
 func TOMLobj(filename string, c GlobalConf) GlobalConf {
