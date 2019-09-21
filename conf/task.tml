@@ -5,8 +5,7 @@
 [Wheel]
     Mode = 1
     Tasks = [
-        {Num=1,Url="http://www.baidu.com",Params_kkk="11111111"},
-        {Num=2,Url="http://www.baidu.com",Params_lll="22222222"},
-        {Num=3,Url="http://www.baidu.com",Params_aaa="33333333"}
+        {Num=1,Url="http://www.baidu.com",Params = {name = "Nail",mmm = "xcvzcxv"},Mode=1},
+        {Num=2,Url="http://www.baidu.com",Params = {name = "22222",mmm = "22222"},Mode=1},
+        {Num=3,Url="http://www.baidu.com",Params = {name = "33333",mmm = "33333"},Mode=1}
     ]
-[Wheel.Tasks]
