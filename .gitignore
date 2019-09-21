@@ -1,0 +1,14 @@
+*.git
+vendor
+data
+file_data
+tmp
+config
+timewheel
+/.idea
+*.log
+workspace
+*.exe
+log
+server.conf
+/temp

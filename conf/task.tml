@@ -1,0 +1,12 @@
+[Server]
+    Name = "mercury_mall.exe"
+    Port = 8081
+    Log = "log"
+[Wheel]
+    Mode = 1
+    Tasks = [
+        {Num=1,Url="http://www.baidu.com",Params_kkk="11111111"},
+        {Num=2,Url="http://www.baidu.com",Params_lll="22222222"},
+        {Num=3,Url="http://www.baidu.com",Params_aaa="33333333"}
+    ]
+[Wheel.Tasks]
